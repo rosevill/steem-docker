@@ -8,7 +8,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DOCKER_DIR="$DIR/dkr"
 FULL_DOCKER_DIR="$DIR/dkr_fullnode"
 DATADIR="$DIR/data"
-DOCKER_NAME="seed"
+#DOCKER_NAME="seed"
 
 BOLD="$(tput bold)"
 RED="$(tput setaf 1)"
@@ -20,20 +20,28 @@ CYAN="$(tput setaf 6)"
 WHITE="$(tput setaf 7)"
 RESET="$(tput sgr0)"
 
+# Defines the S3 location for the folder of shared memory file
 BLOCKCHAIN_BUCKET=
+# Defines the S3 locationfor the folder of config.ini and env files
 CONFIG_BUCKET=
 
-# default. override in .env
+# default override in .env
 PORTS="2001"
 
 if [[ -f .env ]]; then
     source .env
 fi
 
-if [[ ! -f data/witness_node_data_dir/config.ini ]]; then
-    echo "config.ini not found. copying example (seed)";
-    cp data/witness_node_data_dir/config.ini.example data/witness_node_data_dir/config.ini
+# DOCKER_NAME can be either seed or witness
+if [ "$DOCKER_NAME" = "" ]; then
+    echo "Environment variable DOCKER_NAME has not defined."
+    exit 1
 fi
+
+#if [[ ! -f data/witness_node_data_dir/config.ini ]]; then
+#    echo "config.ini not found. copying example (seed)";
+#    cp data/witness_node_data_dir/config.ini.example data/witness_node_data_dir/config.ini
+#fi
 
 IFS=","
 DPORTS=""
@@ -79,22 +87,36 @@ optimize() {
 }
 
 build() {
+    echo "You may want to use '$0 install' for a binary image instead, it's faster."
     echo $GREEN"Building docker container"$RESET
     cd $DOCKER_DIR
     docker build -t steem .
 }
 
 build_full() {
+    echo "You may want to use '$0 install_full' for a binary image instead, it's faster."
     echo $GREEN"Building full-node docker container"$RESET
     cd $FULL_DOCKER_DIR
     docker build -t steem .
 }
 
-ec2_dlconfig() {
+config() {
+    if [ ! -e $DIR/config/$DOCKER_NAME.env ]; then
+        dlconfig
+    fi
+    if [ ! -e $DIR/config/$DOCKER_NAME.env ]; then
+        echo "Failed to config node"
+    fi 
+    cp $DIR/config/config.$DOCKER_NAME $DATADIR/witness_node_data_dir/config.ini
+    #cp $DIR/config/$DOCKER_NAME.env $DIR/.env
+    echo "Node has been configured as [$DOCKER_NAME]"
+}
+
+dlconfig() {
     aws s3 sync $CONFIG_BUCKET $DIR/config
 }
 
-ec2_bootstrap() {
+bootstrap() {
     # Bootstrap a new EC2 instance (Ubuntu 16.04LTS)
     sudo apt-get install awscli
     optimize
@@ -106,7 +128,7 @@ ec2_bootstrap() {
     #start
 }
 
-ec2_fastsync() {
+fastsync() {
     # Download shared memory file from S3 bucket
     if [ "$BLOCKCHAIN_BUCKET $DATADIR" = "" ]; then
         echo "Environment varialbe not exported"
@@ -266,83 +288,93 @@ if [ "$#" -lt 1 ]; then
     help
 fi
 
-case $1 in
-    build)
-        echo "You may want to use '$0 install' for a binary image instead, it's faster."
-        build
-        ;;
-    build_full)
-        echo "You may want to use '$0 install_full' for a binary image instead, it's faster."
-        build_full
-        ;;
-    install_docker)
-        install_docker
-        ;;
-    install)
-        install
-        ;;
-    install_full)
-        install_full
-        ;;
-    debug)
-        debug
-        ;;
-    start)
-        start
-        ;;
-    replay)
-        replay
-        ;;
-    shm_size)
-        shm_size $2
-        ;;
-    stop)
-        stop
-        ;;
-    restart)
-        stop
-        sleep 5
-        start
-        ;;
-    rebuild)
-        stop
-        sleep 5
-        build
-        start
-        ;;
-    optimize)
-        echo "Applying recommended dirty write settings..."
-        optimize
-        ;;
-    status)
-        status
-        ;;
-    wallet)
-        wallet
-        ;;
-    remote_wallet)
-        remote_wallet
-        ;;
-    dlblocks)
-        dlblocks 
-        ;;
-    bootstrap)
-        ec2_bootstrap
-        ;;
-    fastsync)
-        ec2_fastsync
-        ;;
-    dlconfig)
-        ec2_dlconfig
-        ;;
-    enter)
-        enter
-        ;;
-    logs)
-        logs
-        ;;
-    *)
-        echo "Invalid cmd"
-        help
-        ;;
-esac
+type -t $1 | grep function > /dev/null 2>&1
+if [ "$?" = "0" ]; then
+    eval $1
+else
+    echo "Invalid command: $1"
+fi
+
+# case $1 in
+#     build)
+#         echo "You may want to use '$0 install' for a binary image instead, it's faster."
+#         build
+#         ;;
+#     build_full)
+#         echo "You may want to use '$0 install_full' for a binary image instead, it's faster."
+#         build_full
+#         ;;
+#     install_docker)
+#         install_docker
+#         ;;
+#     install)
+#         install
+#         ;;
+#     install_full)
+#         install_full
+#         ;;
+#     debug)
+#         debug
+#         ;;
+#     start)
+#         start
+#         ;;
+#     replay)
+#         replay
+#         ;;
+#     shm_size)
+#         shm_size $2
+#         ;;
+#     stop)
+#         stop
+#         ;;
+#     restart)
+#         stop
+#         sleep 5
+#         start
+#         ;;
+#     rebuild)
+#         stop
+#         sleep 5
+#         build
+#         start
+#         ;;
+#     optimize)
+#         echo "Applying recommended dirty write settings..."
+#         optimize
+#         ;;
+#     status)
+#         status
+#         ;;
+#     wallet)
+#         wallet
+#         ;;
+#     remote_wallet)
+#         remote_wallet
+#         ;;
+#     dlblocks)
+#         dlblocks 
+#         ;;
+#     config)
+#         ec2_config
+#         ;;
+#     bootstrap)
+#         ec2_bootstrap
+#         ;;
+#     fastsync)
+#         ec2_fastsync
+#         ;;
+#     dlconfig)
+#         ec2_dlconfig
+#         ;;
+#     enter)
+#         enter
+#         ;;
+#     logs)
+#         logs
+#         ;;
+#     *)
+#         echo "Invalid cmd"
+#         help
+#         ;;
+# esac
