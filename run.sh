@@ -20,6 +20,9 @@ CYAN="$(tput setaf 6)"
 WHITE="$(tput setaf 7)"
 RESET="$(tput sgr0)"
 
+BLOCKCHAIN_BUCKET=
+CONFIG_BUCKET=
+
 # default. override in .env
 PORTS="2001"
 
@@ -87,6 +90,29 @@ build_full() {
     docker build -t steem .
 }
 
+dlconfig() {
+    aws s3 sync $CONFIG_BUCKET $DIR/config
+}
+
+bootstrap() {
+    # Bootstrap a new EC2 instance (Ubuntu 16.04LTS)
+    optimize
+    install_docker
+    install
+    dlconfig
+    fastsync
+    # TODO: copy config (seed or witness) based on parameters
+    #start
+}
+
+fastsync() {
+    # Download shared memory file from S3 bucket
+    if [ "$BLOCKCHAIN_BUCKET $DATADIR" = "" ]; then
+        echo "Environment varialbe not exported"
+    fi
+    aws s3 sync $BLOCKCHAIN_BUCKET $DATADIR/witness_node_data_dir/blockchain
+}
+
 dlblocks() {
     if [[ ! -d "$DATADIR/blockchain" ]]; then
         mkdir "$DATADIR/blockchain"
@@ -111,7 +137,7 @@ dlblocks() {
 
 install_docker() {
     sudo apt update
-    sudo apt install curl git
+    sudo apt install curl git awscli
     curl https://get.docker.com | sh
     if [ "$EUID" -ne 0 ]; then 
         echo "Adding user $(whoami) to docker group"
@@ -121,18 +147,18 @@ install_docker() {
 }
 
 install() {
-    echo "Loading image from someguy123/steem"
-    docker pull someguy123/steem
+    echo "Loading image from roseville/steem"
+    docker pull roseville/steem
     echo "Tagging as steem"
-    docker tag someguy123/steem steem
+    docker tag roseville/steem steem
     echo "Installation completed. You may now configure or run the server"
 }
 
 install_full() {
-    echo "Loading image from someguy123/steem"
-    docker pull someguy123/steem:latest-full
+    echo "Loading image from roseville/steem"
+    docker pull roseville/steem:latest-full
     echo "Tagging as steem"
-    docker tag someguy123/steem:latest-full steem
+    docker tag roseville/steem:latest-full steem
     echo "Installation completed. You may now configure or run the server"
 }
 seed_exists() {
@@ -150,6 +176,17 @@ seed_running() {
         return 0
     else
         return -1
+    fi
+}
+
+debug() {
+    echo $GREEN"Starting container..."$RESET
+    seed_exists
+    if [[ $? == 0 ]]; then
+        docker start $DOCKER_NAME
+    else
+        echo $DATADIR
+        docker run $DPORTS -v /dev/shm:/shm -v "$DATADIR":/steem --name $DOCKER_NAME -it steem /bin/bash
     fi
 }
 
@@ -178,6 +215,8 @@ shm_size() {
 
 stop() {
     echo $RED"Stopping container..."$RESET
+    docker exec -it $DOCKER_NAME pkill steemd
+    sleep 10
     docker stop $DOCKER_NAME
     docker rm $DOCKER_NAME
 }
@@ -245,6 +284,9 @@ case $1 in
     install_full)
         install_full
         ;;
+    debug)
+        debug
+        ;;
     start)
         start
         ;;
@@ -283,6 +325,12 @@ case $1 in
         ;;
     dlblocks)
         dlblocks 
+        ;;
+    fastsync)
+        fastsync
+        ;;
+    dlconfig)
+        dlconfig
         ;;
     enter)
         enter
