@@ -90,12 +90,13 @@ build_full() {
     docker build -t steem .
 }
 
-dlconfig() {
+ec2_dlconfig() {
     aws s3 sync $CONFIG_BUCKET $DIR/config
 }
 
-bootstrap() {
+ec2_bootstrap() {
     # Bootstrap a new EC2 instance (Ubuntu 16.04LTS)
+    sudo apt-get install awscli
     optimize
     install_docker
     install
@@ -105,7 +106,7 @@ bootstrap() {
     #start
 }
 
-fastsync() {
+ec2_fastsync() {
     # Download shared memory file from S3 bucket
     if [ "$BLOCKCHAIN_BUCKET $DATADIR" = "" ]; then
         echo "Environment varialbe not exported"
@@ -137,7 +138,7 @@ dlblocks() {
 
 install_docker() {
     sudo apt update
-    sudo apt install curl git awscli
+    sudo apt install curl git
     curl https://get.docker.com | sh
     if [ "$EUID" -ne 0 ]; then 
         echo "Adding user $(whoami) to docker group"
@@ -259,7 +260,6 @@ status() {
         echo "Container isn't running. Start it with $0 start"$RESET
         return
     fi
-
 }
 
 if [ "$#" -lt 1 ]; then
@@ -326,11 +326,14 @@ case $1 in
     dlblocks)
         dlblocks 
         ;;
+    bootstrap)
+        ec2_bootstrap
+        ;;
     fastsync)
-        fastsync
+        ec2_fastsync
         ;;
     dlconfig)
-        dlconfig
+        ec2_dlconfig
         ;;
     enter)
         enter
